@@ -194,8 +194,8 @@
     "unit_price": 1.08,
     "total_weight": 100.0,
     "total_cups": 7,
-    "remaining_weight": 37.0,
-    "remaining_cups": 3,
+    "remaining_weight": 18.0,
+    "remaining_cups": 1,
     "flavor_desc": "茉莉花、葡萄柚、蜂蜜",
     "notes": ""
   },
@@ -1082,8 +1082,8 @@
     "unit_price": 2.92,
     "total_weight": 90,
     "total_cups": 6,
-    "remaining_weight": 90,
-    "remaining_cups": 6,
+    "remaining_weight": 75.0,
+    "remaining_cups": 5,
     "flavor_desc": "紫葡萄、樱桃、哈密瓜、菠萝",
     "notes": "2026-05-29 图片识别入库；批次：BENI GEIS 159 275；共6瓶90g；生长海拔：1300m；最佳赏味期：2026-06-06 至 2026-09-06；标签英文：Prussian Blue。"
   },
