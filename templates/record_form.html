@@ -1,0 +1,693 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+{% set r = record or {} %}
+{% set default_grinder = r.get('grinder') if record else 'Timemore S3' %}
+{% set default_grind_setting = r.get('grind_setting') if record else '6.5' %}
+<div style="max-width:720px;margin:0 auto">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+    <a href="/" class="btn btn-ghost btn-page-action">← 返回</a>
+    <div class="page-title" style="margin:0">{{ title }}</div>
+  </div>
+
+  <form method="POST">
+    <div class="card">
+      <div class="form-grid">
+
+        <!-- 日期 -->
+        <div class="section-label">冲煮日期</div>
+        <div class="form-group full">
+          <label>冲煮日期时间</label>
+          <input type="text" name="date" value="{{ r.get('date', '') }}" placeholder="如：2026-04-21 14:30（留空则自动填入当前时间）">
+        </div>
+
+        <!-- 选择豆子（处理法分类 → 豆子 二级联动） -->
+        <hr class="section-divider">
+        <div class="section-label">选择咖啡豆</div>
+        {% set selected = namespace(process_category='') %}
+        {% if r.get('bean_id') %}{% for b in beans %}{% if b.id == r.get('bean_id') %}{% set selected.process_category = b.get('_process_category', '其他') %}{% endif %}{% endfor %}{% endif %}
+        <div class="form-group">
+          <label>处理法分类</label>
+          <select id="process-filter" onchange="filterBeans(this.value)">
+            <option value="">— 全部处理法 —</option>
+            {% for category in process_categories %}
+            <option value="{{ category }}" {% if category == selected.process_category %}selected{% endif %}>{{ category }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>咖啡豆 *</label>
+          <select name="bean_id" id="bean-select" required onchange="updateBeanInfo(this)">
+            <option value="">— 请选择豆子 —</option>
+            {% for b in beans %}
+            <option value="{{ b.id }}"
+              data-process-category="{{ b.get('_process_category', '其他') }}"
+              data-flavor="{{ b.flavor_desc }}"
+              {% if r.get('bean_id') == b.id %}selected{% endif %}>
+              {%- if b.origin -%}{{ b.origin }}{%- endif -%}
+              {%- if b.farm -%}{% if b.origin %}-{% endif %}{{ b.farm }}{%- endif -%}
+              {%- if b.process -%}{% if b.origin or b.farm %}-{% endif %}{{ b.process }}{%- endif -%}
+              {%- if b.variety -%}{% if b.origin or b.farm or b.process %}-{% endif %}{{ b.variety }}{%- endif -%}
+              {%- if not (b.origin or b.farm or b.process or b.variety) -%}{{ b.name }}{%- endif -%}
+              {% if b.remaining_cups > 0 %} （剩 {{ b.remaining_cups }} 杯 / {{ b.remaining_weight }}g）{% else %} （已用尽）{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div id="bean-info" class="form-group full" style="display:{% if r.get('bean_id') %}block{% else %}none{% endif %}">
+          <div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px">
+            <div style="font-size:12px;color:var(--text2)">参考风味：<span id="bean-flavor" style="color:var(--text)">
+              {% if r.get('bean_id') %}
+                {% for b in beans %}{% if b.id == r.get('bean_id') %}{{ b.flavor_desc }}{% endif %}{% endfor %}
+              {% endif %}
+            </span></div>
+          </div>
+        </div>
+
+        <!-- 研磨参数 -->
+        <hr class="section-divider">
+        <div class="section-label">研磨参数</div>
+        <!-- 磨豆机 + 研磨刻度（同一行） -->
+        <div class="form-group full">
+          <div style="display:flex;align-items:flex-end;gap:12px">
+            <div style="flex:0 0 50%">
+              <label style="display:block;margin-bottom:4px">磨豆机</label>
+              <select name="grinder" id="grinder-select" onchange="onGrinderChange(this.value)" style="min-width:160px">
+                <option value="{{ default_grinder }}">{{ default_grinder or '— 手动输入 —' }}</option>
+                {% for g in cfg.get('grinders', []) %}
+                {% if g != default_grinder %}<option value="{{ g }}">{{ g }}</option>{% endif %}
+                {% endfor %}
+              </select>
+            </div>
+            <div style="flex:1;min-width:0">
+              <label style="display:block;margin-bottom:4px;font-size:12px;color:var(--text2)">研磨刻度</label>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div id="grind-ruler-wrap" style="flex:1;min-width:0;height:72px;border-radius:6px;border:1px solid var(--border);overflow:hidden;cursor:ew-resize;touch-action:none;user-select:none">
+                  <canvas id="grind-canvas" style="display:block;width:100%;height:100%"></canvas>
+                </div>
+                <span id="grind-val-display" style="flex:0 0 auto;font-size:22px;font-weight:700;color:var(--accent2);min-width:52px;text-align:right;font-family:'Courier New',monospace;letter-spacing:2px;line-height:1">{{ '%.1f'|format(default_grind_setting|float) if default_grind_setting else '—' }}</span>
+              </div>
+            </div>
+          </div>
+          <input type="hidden" name="grind_setting" id="grind-setting-hidden" value="{{ default_grind_setting }}">
+        </div>
+
+        <!-- 水与粉 -->
+        <hr class="section-divider">
+        <div class="section-label">水与粉</div>
+        <div class="form-group">
+          <label>水温（℃）</label>
+          <input type="number" name="water_temp" value="{{ r.get('water_temp', 93) }}" min="60" max="100" step="0.5">
+        </div>
+        <div class="form-group">
+          <label>咖啡粉量（g）</label>
+          <input type="number" name="coffee_amount" value="{{ r.get('coffee_amount', 15) }}" min="1" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>用水量（ml）</label>
+          <input type="number" name="water_amount" value="{{ r.get('water_amount', 225) }}" min="50">
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end">
+          <div style="width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text2)" id="ratio-display">粉水比 —</div>
+        </div>
+
+        <!-- 器具 -->
+        <hr class="section-divider">
+        <div class="section-label">器具</div>
+        <div class="form-group">
+          <label>滤杯</label>
+          <select name="dripper">
+            <option value="{{ r.get('dripper','') }}">{{ r.get('dripper') or '— 手动输入 —' }}</option>
+            {% for d in cfg.get('drippers', []) %}
+            {% if d != r.get('dripper') %}<option value="{{ d }}">{{ d }}</option>{% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <!-- 冲煮参数 -->
+        <hr class="section-divider">
+        <div class="section-label">冲煮参数</div>
+        <div class="form-group">
+          <label>焖蒸时间（秒）</label>
+          <input type="number" name="bloom_time" value="{{ r.get('bloom_time', 30) }}" min="0">
+        </div>
+        <div class="form-group">
+          <label>总冲煮时间（秒）</label>
+          <input type="number" name="total_time" value="{{ r.get('total_time', 120) }}" min="0">
+        </div>
+        <div class="form-group full">
+          <label>注水方式</label>
+          <input type="text" name="pour_method" value="{{ r.get('pour_method','') }}" placeholder="如：三段式注水、绕圈注水">
+        </div>
+
+        <!-- 品饮评价 -->
+        <hr class="section-divider">
+        <div class="section-label">品饮评价</div>
+        <div class="form-group full taste-radar-card">
+          {% set radar_items = [
+            ('aroma_score', '香气', r.get('aroma_score', 5)),
+            ('acidity_score', '酸感', r.get('acidity_score', 5)),
+            ('sweetness_score', '甜感', r.get('sweetness_score', 5)),
+            ('bitterness_score', '苦感', r.get('bitterness_score', 5)),
+            ('body_score', '醇厚', r.get('body_score', 5)),
+            ('finish_score', '尾韵', r.get('finish_score', 5))
+          ] %}
+          <div class="taste-radar-layout">
+            <div class="taste-radar-wrap">
+              <svg id="taste-radar" class="taste-radar" viewBox="0 0 320 320" aria-label="品饮六边形评分">
+                <g id="taste-grid"></g>
+                <polygon id="taste-polygon" class="taste-polygon" points=""></polygon>
+                <g id="taste-handles"></g>
+                <g id="taste-labels"></g>
+              </svg>
+            </div>
+            <div class="taste-score-list">
+              {% for name, label, value in radar_items %}
+              <div class="taste-score-row" data-score-row="{{ name }}">
+                <span>{{ label }}</span>
+                <strong><span id="{{ name }}-val" class="rating-value">{{ value }}</span> / 10</strong>
+                <input id="{{ name }}" type="hidden" name="{{ name }}" value="{{ value }}">
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="form-group full rating-grid">
+          <div class="rating-row rating-row-main">
+            <label for="overall_score">总体喜好：<span id="overall_score-val" class="rating-value">{{ r.get('overall_score', 7) }}</span> / 10</label>
+            <input id="overall_score" type="range" name="overall_score" min="1" max="10" step="0.5" value="{{ r.get('overall_score', 7) }}"
+              oninput="document.getElementById('overall_score-val').textContent=formatScore(this.value)">
+          </div>
+        </div>
+        <div class="form-group full">
+          <label>风味描述</label>
+          <input type="text" name="flavor" value="{{ r.get('flavor','') }}" placeholder="记录具体风味，如花香、柑橘、莓果、坚果、焦糖……">
+        </div>
+        <div class="form-group full">
+          <label>水温调整</label>
+          <input type="text" name="water_temp_adjustment" value="{{ r.get('water_temp_adjustment','') }}" placeholder="记录下次水温怎么调，如降低 2℃、提高到 93℃、保持不变……">
+        </div>
+        <div class="form-group full">
+          <label>研磨度调整</label>
+          <input type="text" name="grind_adjustment" value="{{ r.get('grind_adjustment','') }}" placeholder="记录下次研磨怎么调，如磨粗 0.5 格、磨细一点、保持 6.5……">
+        </div>
+        <div class="form-group full">
+          <label>意见</label>
+          <input type="text" name="tasting_notes" value="{{ r.get('tasting_notes','') }}" placeholder="记录整体判断、问题和下次冲煮方向……">
+        </div>
+
+        <!-- 提交 -->
+        <hr class="section-divider">
+        <div class="form-group full" style="flex-direction:row;gap:10px;justify-content:flex-end">
+          <a href="/" class="btn btn-ghost">取消</a>
+          <button type="submit" class="btn btn-primary">💾 保存记录</button>
+        </div>
+
+      </div>
+    </div>
+  </form>
+</div>
+
+<style>
+#bean-select,
+#bean-select option {
+  font-size: 18px;
+}
+
+.rating-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+.taste-radar-card {
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.taste-radar-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 220px;
+  gap: 18px;
+  align-items: center;
+}
+.taste-radar-wrap {
+  width: min(100%, 360px);
+  aspect-ratio: 1;
+  margin: 0 auto;
+}
+.taste-radar {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  touch-action: none;
+  user-select: none;
+}
+.taste-grid-line,
+.taste-grid-axis {
+  fill: none;
+  stroke: var(--border);
+}
+.taste-grid-line {
+  stroke-width: 1;
+}
+.taste-grid-axis {
+  stroke-width: 1;
+  opacity: .75;
+}
+.taste-polygon {
+  fill: rgba(239, 111, 26, .22);
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.taste-handle {
+  fill: var(--surface-solid);
+  stroke: var(--accent);
+  stroke-width: 3;
+  cursor: grab;
+}
+.taste-handle:active,
+.taste-handle.dragging {
+  cursor: grabbing;
+  fill: var(--tier-daily-soft);
+}
+.taste-label {
+  fill: var(--text2);
+  font-size: 15px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+.taste-score-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.taste-score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 11px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 15px;
+}
+.rating-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.rating-row-main {
+  grid-column: 1 / -1;
+}
+.rating-row label {
+  font-size: 16px;
+}
+.rating-value {
+  color: var(--accent);
+  font-weight: 700;
+}
+.rating-row input[type="range"] {
+  padding: 0;
+  height: 28px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.rating-row input[type="range"]::-webkit-slider-thumb {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.rating-row input[type="range"]::-moz-range-thumb {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.rating-row input[type="range"]::-moz-range-progress {
+  background: var(--accent);
+}
+@media (max-width: 700px) {
+  .rating-grid {
+    grid-template-columns: 1fr;
+  }
+  .taste-radar-layout {
+    grid-template-columns: 1fr;
+  }
+  .taste-score-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+</style>
+
+<script>
+function formatScore(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return v;
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function setupTasteRadar() {
+  const svg = document.getElementById('taste-radar');
+  if (!svg) return;
+
+  const axes = [
+    { name: 'aroma_score', label: '香气', angle: -90 },
+    { name: 'acidity_score', label: '酸感', angle: -30 },
+    { name: 'sweetness_score', label: '甜感', angle: 30 },
+    { name: 'bitterness_score', label: '苦感', angle: 90 },
+    { name: 'body_score', label: '醇厚', angle: 150 },
+    { name: 'finish_score', label: '尾韵', angle: 210 },
+  ].map(axis => {
+    const rad = axis.angle * Math.PI / 180;
+    return { ...axis, ux: Math.cos(rad), uy: Math.sin(rad) };
+  });
+
+  const center = { x: 160, y: 160 };
+  const radius = 104;
+  const grid = document.getElementById('taste-grid');
+  const polygon = document.getElementById('taste-polygon');
+  const handles = document.getElementById('taste-handles');
+  const labels = document.getElementById('taste-labels');
+  const ns = 'http://www.w3.org/2000/svg';
+  let activeAxis = null;
+
+  function clampScore(v) {
+    return Math.max(1, Math.min(10, Math.round(v * 2) / 2));
+  }
+
+  function score(name) {
+    const el = document.getElementById(name);
+    return clampScore(parseFloat(el?.value || 5));
+  }
+
+  function point(axis, value) {
+    const r = radius * (value / 10);
+    return {
+      x: center.x + axis.ux * r,
+      y: center.y + axis.uy * r,
+    };
+  }
+
+  function pointsFor(valueFn) {
+    return axes.map(axis => {
+      const p = point(axis, valueFn(axis));
+      return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+    }).join(' ');
+  }
+
+  function setScore(axis, rawValue) {
+    const value = clampScore(rawValue);
+    const input = document.getElementById(axis.name);
+    const label = document.getElementById(`${axis.name}-val`);
+    if (input) input.value = value.toFixed(1);
+    if (label) label.textContent = formatScore(value);
+    drawRadar();
+  }
+
+  function drawGrid() {
+    grid.innerHTML = '';
+    labels.innerHTML = '';
+    [2, 4, 6, 8, 10].forEach(level => {
+      const line = document.createElementNS(ns, 'polygon');
+      line.setAttribute('points', pointsFor(() => level));
+      line.setAttribute('class', 'taste-grid-line');
+      grid.appendChild(line);
+    });
+    axes.forEach(axis => {
+      const end = point(axis, 10);
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', center.x);
+      line.setAttribute('y1', center.y);
+      line.setAttribute('x2', end.x);
+      line.setAttribute('y2', end.y);
+      line.setAttribute('class', 'taste-grid-axis');
+      grid.appendChild(line);
+
+      const labelPoint = {
+        x: center.x + axis.ux * 134,
+        y: center.y + axis.uy * 134,
+      };
+      const text = document.createElementNS(ns, 'text');
+      text.textContent = axis.label;
+      text.setAttribute('x', labelPoint.x);
+      text.setAttribute('y', labelPoint.y);
+      text.setAttribute('class', 'taste-label');
+      labels.appendChild(text);
+    });
+  }
+
+  function drawRadar() {
+    polygon.setAttribute('points', pointsFor(axis => score(axis.name)));
+    handles.innerHTML = '';
+    axes.forEach(axis => {
+      const p = point(axis, score(axis.name));
+      const handle = document.createElementNS(ns, 'circle');
+      handle.setAttribute('cx', p.x);
+      handle.setAttribute('cy', p.y);
+      handle.setAttribute('r', 8);
+      handle.setAttribute('class', `taste-handle${activeAxis === axis ? ' dragging' : ''}`);
+      handle.dataset.axis = axis.name;
+      handle.addEventListener('pointerdown', e => {
+        activeAxis = axis;
+        svg.setPointerCapture(e.pointerId);
+        handle.classList.add('dragging');
+        updateFromPointer(e);
+        e.preventDefault();
+      });
+      handles.appendChild(handle);
+    });
+  }
+
+  function svgPoint(e) {
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+
+  function updateFromPointer(e) {
+    if (!activeAxis) return;
+    const p = svgPoint(e);
+    const dx = p.x - center.x;
+    const dy = p.y - center.y;
+    const projected = dx * activeAxis.ux + dy * activeAxis.uy;
+    setScore(activeAxis, (projected / radius) * 10);
+  }
+
+  svg.addEventListener('pointermove', e => {
+    if (!activeAxis) return;
+    updateFromPointer(e);
+    e.preventDefault();
+  });
+  svg.addEventListener('pointerup', e => {
+    if (svg.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
+    activeAxis = null;
+    drawRadar();
+  });
+  svg.addEventListener('pointercancel', e => {
+    if (svg.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
+    activeAxis = null;
+    drawRadar();
+  });
+
+  drawGrid();
+  drawRadar();
+}
+
+function filterBeans(processCategory) {
+  const sel = document.getElementById('bean-select');
+  const opts = Array.from(sel.querySelectorAll('option[data-process-category]'));
+  opts.forEach(opt => { opt.hidden = !!(processCategory && opt.dataset.processCategory !== processCategory); });
+  // 若当前选中的豆子不属于新处理法分类，则清空
+  const cur = sel.value;
+  const curOpt = sel.querySelector(`option[value="${cur}"]`);
+  if (cur && curOpt && curOpt.hidden) {
+    sel.value = '';
+    document.getElementById('bean-info').style.display = 'none';
+  }
+}
+
+function updateBeanInfo(sel) {
+  const opt = sel.selectedOptions[0];
+  const info = document.getElementById('bean-info');
+  if (!opt.value) { info.style.display = 'none'; return; }
+  document.getElementById('bean-flavor').textContent = opt.dataset.flavor || '—';
+  info.style.display = 'block';
+  // 同步处理法分类选择器
+  const processSel = document.getElementById('process-filter');
+  if (opt.dataset.processCategory && processSel.value !== opt.dataset.processCategory) {
+    processSel.value = opt.dataset.processCategory;
+    filterBeans(opt.dataset.processCategory);
+  }
+}
+
+// 磨豆机刻度范围配置
+const GRINDER_RANGES = {
+  '泰磨S3':      { min: 0, max: 9, step: 0.1 },
+  'Timemore S3': { min: 0, max: 9, step: 0.1 },
+};
+const DEFAULT_RANGE = { min: 0, max: 40, step: 0.5 };
+const PX_PER_UNIT   = 120; // 每 1.0 单位对应的像素数（值越大拖动越远）
+
+// 页面初始化
+(function init() {
+  const processSel = document.getElementById('process-filter');
+  if (processSel.value) filterBeans(processSel.value);
+  setupTasteRadar();
+  setupRulerInteraction();
+  const grinder = document.getElementById('grinder-select');
+  if (grinder.value) onGrinderChange(grinder.value);
+  else {
+    const hidden = document.getElementById('grind-setting-hidden');
+    const v = parseFloat(hidden.value) || 0;
+    requestAnimationFrame(() => drawGrindRuler(v, DEFAULT_RANGE.min, DEFAULT_RANGE.max));
+  }
+})();
+
+function onGrinderChange(val) {
+  const range = GRINDER_RANGES[val] || DEFAULT_RANGE;
+  let cur = parseFloat(document.getElementById('grind-setting-hidden').value);
+  if (isNaN(cur) || cur < range.min || cur > range.max) {
+    cur = parseFloat(((range.min + range.max) / 2).toFixed(1));
+    applyGrindVal(cur, range);
+  }
+  requestAnimationFrame(() => drawGrindRuler(cur, range.min, range.max));
+}
+
+function applyGrindVal(raw, range) {
+  if (!range) range = GRINDER_RANGES[document.getElementById('grinder-select').value] || DEFAULT_RANGE;
+  const v = parseFloat((Math.round(Math.max(range.min, Math.min(range.max, raw)) / range.step) * range.step).toFixed(1));
+  document.getElementById('grind-val-display').textContent = v.toFixed(1);
+  document.getElementById('grind-setting-hidden').value    = v.toFixed(1);
+  drawGrindRuler(v, range.min, range.max);
+}
+
+// ── 滑动标尺绘制：刻度尺随拖动左右移动，中心线固定为当前读数 ──
+function drawGrindRuler(value, min, max) {
+  const canvas = document.getElementById('grind-canvas');
+  const wrap   = document.getElementById('grind-ruler-wrap');
+  if (!canvas || !wrap) return;
+
+  const grinder = document.getElementById('grinder-select')?.value || '';
+  const isRed   = grinder === 'Timemore S3';
+
+  const dpr = window.devicePixelRatio || 1;
+  const W   = wrap.clientWidth  || 300;
+  const H   = wrap.clientHeight || 72;
+  canvas.width  = W * dpr; canvas.height = H * dpr;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const cx = W / 2;
+
+  // 背景（Timemore S3 用粉底，其他用纸色系）
+  ctx.fillStyle = isRed ? '#FFC0CB' : '#f1e8d7';
+  ctx.fillRect(0, 0, W, H);
+
+  // 刻度线与数字
+  const step = (max - min) <= 10 ? 0.1 : 0.5;
+  const visUnits = (W / 2) / PX_PER_UNIT + 1.5;
+  const vStart   = value - visUnits;
+  const vEnd     = value + visUnits;
+
+  for (let vi = Math.ceil(vStart / step); vi <= Math.floor(vEnd / step); vi++) {
+    const v = parseFloat((vi * step).toFixed(1));
+    if (v < min - 0.001 || v > max + 0.001) continue;
+    const x     = cx + (v - value) * PX_PER_UNIT;
+    const isInt = Math.abs(Math.round(v) - v) < 0.001;
+    const isHlf = !isInt && Math.abs(Math.round(v * 2) / 2 - v) < 0.001;
+    const tH    = isInt ? 36 : isHlf ? 22 : 12;
+
+    ctx.beginPath();
+    ctx.moveTo(x, H - tH); ctx.lineTo(x, H);
+    if (isRed) {
+      ctx.strokeStyle = isInt ? '#C41E3A' : isHlf ? '#D44050' : '#E88090';
+    } else {
+      ctx.strokeStyle = isInt ? '#3a3025' : isHlf ? '#7f6a50' : '#bea987';
+    }
+    ctx.lineWidth = isInt ? 2.5 : 1;
+    ctx.stroke();
+
+    if (isInt) {
+      ctx.font         = 'bold 24px "Courier New",monospace';
+      ctx.fillStyle    = isRed ? '#C41E3A' : '#3a3025';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(v.toFixed(1), x, 4);
+    }
+  }
+
+  // 边界遮罩（超出范围变灰）
+  const minX = cx + (min - value) * PX_PER_UNIT;
+  const maxX = cx + (max - value) * PX_PER_UNIT;
+  ctx.fillStyle = 'rgba(0,0,0,0.10)';
+  if (minX > 0)  ctx.fillRect(0, 0, minX, H);
+  if (maxX < W)  ctx.fillRect(maxX, 0, W - maxX, H);
+
+  // 中心固定指针（竖线 + 下方三角）
+  ctx.beginPath();
+  ctx.moveTo(cx, 0); ctx.lineTo(cx, H);
+  ctx.strokeStyle = '#ef6f1a'; ctx.lineWidth = 2; ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(cx - 7, H); ctx.lineTo(cx + 7, H); ctx.lineTo(cx, H - 10);
+  ctx.closePath();
+  ctx.fillStyle = '#ef6f1a'; ctx.fill();
+}
+
+// ── 滑动标尺交互 ─────────────────────────────────────────────────
+function setupRulerInteraction() {
+  const wrap = document.getElementById('grind-ruler-wrap');
+  if (!wrap) return;
+
+  function range() { return GRINDER_RANGES[document.getElementById('grinder-select').value] || DEFAULT_RANGE; }
+
+  let _drag = null;
+  wrap.addEventListener('mousedown', e => {
+    _drag = { x: e.clientX, val: parseFloat(document.getElementById('grind-setting-hidden').value) || range().min };
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!_drag) return;
+    // 标尺向右移动 → 数字减小（物理标尺感）
+    applyGrindVal(_drag.val - (e.clientX - _drag.x) / PX_PER_UNIT, range());
+  });
+  document.addEventListener('mouseup', () => { _drag = null; });
+
+  wrap.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = range();
+    const cur = parseFloat(document.getElementById('grind-setting-hidden').value) || r.min;
+    applyGrindVal(cur + (e.deltaY < 0 ? r.step : -r.step), r);
+  }, { passive: false });
+
+  let _touch = null;
+  wrap.addEventListener('touchstart', e => {
+    _touch = { x: e.touches[0].clientX, val: parseFloat(document.getElementById('grind-setting-hidden').value) || range().min };
+    e.preventDefault();
+  }, { passive: false });
+  wrap.addEventListener('touchmove', e => {
+    if (!_touch) return;
+    applyGrindVal(_touch.val - (e.touches[0].clientX - _touch.x) / PX_PER_UNIT, range());
+    e.preventDefault();
+  }, { passive: false });
+  wrap.addEventListener('touchend', () => { _touch = null; });
+}
+
+function updateRatio() {
+  const c = parseFloat(document.querySelector('[name=coffee_amount]').value) || 0;
+  const w = parseFloat(document.querySelector('[name=water_amount]').value) || 0;
+  const el = document.getElementById('ratio-display');
+  el.textContent = c > 0 ? `粉水比  1 : ${(w/c).toFixed(1)}` : '粉水比 —';
+}
+document.querySelector('[name=coffee_amount]').addEventListener('input', updateRatio);
+document.querySelector('[name=water_amount]').addEventListener('input', updateRatio);
+updateRatio();
+</script>
+{% endblock %}

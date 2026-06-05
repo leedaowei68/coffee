@@ -1,0 +1,257 @@
+﻿{% extends "base.html" %}
+{% block title %}库存豆子{% endblock %}
+{% block content %}
+
+{% set total_weight_g = beans|sum(attribute="remaining_weight") %}
+
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+  <a href="/" class="btn btn-ghost btn-page-action">← 返回首页</a>
+  <div class="page-title" style="margin:0">☕ 库存豆子</div>
+  <span style="color:var(--text2);font-size:26px">{{ beans|length }} 款 · {{ "%.0f"|format(total_weight_g) }}g</span>
+</div>
+
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+  <div style="position:relative">
+    <button id="filter-btn" onclick="toggleFilter()" class="btn btn-ghost" style="padding:8px 18px;font-size:20px;display:flex;align-items:center;gap:5px">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 2h13l-5 6v5l-3-2V8L1.5 2z"/></svg>
+      筛选<span id="filter-count" style="display:none;background:var(--accent);color:#fff;border-radius:8px;padding:0 8px;font-size:16px;margin-left:4px"></span>
+    </button>
+    {% set ns = namespace(origins=[], processes=[]) %}
+    {% for g in bean_groups %}{% for b in g.beans %}
+      {% if b.origin and b.origin not in ns.origins %}{% set ns.origins = ns.origins + [b.origin] %}{% endif %}
+      {% if b.process and b.process not in ns.processes %}{% set ns.processes = ns.processes + [b.process] %}{% endif %}
+    {% endfor %}{% endfor %}
+    <div id="filter-panel" style="display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:200;background:var(--surface-solid);border:1px solid var(--border);border-radius:8px;padding:24px;width:min(1200px,calc(100vw - 60px));box-shadow:0 8px 24px rgba(0,0,0,.5)">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px 40px;margin-bottom:20px">
+        <div>
+          <div style="font-size:18px;color:var(--text2);margin-bottom:10px;letter-spacing:.6px">分类</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <button class="filter-chip active" data-type="category" data-val="" onclick="setFilter('category','',this)">全部</button>
+            {% for g in bean_groups %}<button class="filter-chip" data-type="category" data-val="{{ g.category }}" onclick="setFilter('category','{{ g.category }}',this)">{{ g.category }}</button>{% endfor %}
+          </div>
+        </div>
+        <div>
+          <div style="font-size:18px;color:var(--text2);margin-bottom:10px;letter-spacing:.6px">产地</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <button class="filter-chip active" data-type="origin" data-val="" onclick="setFilter('origin','',this)">全部</button>
+            {% for o in ns.origins %}<button class="filter-chip" data-type="origin" data-val="{{ o }}" onclick="setFilter('origin','{{ o }}',this)">{{ o }}</button>{% endfor %}
+          </div>
+        </div>
+        <div>
+          <div style="font-size:18px;color:var(--text2);margin-bottom:10px;letter-spacing:.6px">处理法</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <button class="filter-chip active" data-type="process" data-val="" onclick="setFilter('process','',this)">全部</button>
+            {% for p in ns.processes %}<button class="filter-chip" data-type="process" data-val="{{ p }}" onclick="setFilter('process','{{ p }}',this)">{{ p }}</button>{% endfor %}
+          </div>
+        </div>
+        <div>
+          <div style="font-size:18px;color:var(--text2);margin-bottom:10px;letter-spacing:.6px">等级</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <button class="filter-chip active" data-type="tier" data-val="" onclick="setFilter('tier','',this)">全部</button>
+            <button class="filter-chip" data-type="tier" data-val="顶奢" onclick="setFilter('tier','顶奢',this)" style="color:var(--tier-luxury-text)">顶奢</button>
+            <button class="filter-chip" data-type="tier" data-val="超精" onclick="setFilter('tier','超精',this)" style="color:var(--tier-premium-text)">超精</button>
+            <button class="filter-chip" data-type="tier" data-val="口粮" onclick="setFilter('tier','口粮',this)" style="color:var(--tier-daily-text)">口粮</button>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:18px;color:var(--text2);margin-bottom:8px;letter-spacing:.6px">搜索</div>
+      <input id="bean-search" type="text" placeholder="庄园、品种…" oninput="applyFilters()"
+        style="width:100%;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:20px">
+      <button onclick="resetFilters()" style="margin-top:12px;width:100%;padding:10px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:18px;cursor:pointer">重置筛选</button>
+    </div>
+  </div>
+  <div id="bean-count-tip" style="font-size:20px;color:var(--text2);display:none"></div>
+  <a href="/bean/new" class="btn btn-primary" style="padding:8px 20px;font-size:20px;margin-left:auto">+ 新增豆子</a>
+</div>
+
+{% if not beans %}
+<div class="card" style="text-align:center;padding:48px;color:var(--text2)">暂无库存豆子</div>
+{% else %}
+<div style="display:flex;flex-direction:column;gap:20px">
+{% for g in bean_groups %}
+<div class="folder-group" data-category="{{ g.category }}">
+
+  <div class="folder-tab">
+    <span class="folder-brand">{{ g.category }}</span>
+    <span style="color:var(--text2);font-size:20px">{{ g.total_count }} 款</span>
+    <span style="color:var(--text2);font-size:20px;margin-left:auto">{{ "%.0f"|format(g.total_weight) }}g</span>
+    <svg class="folder-arrow" width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 4l4 4 4-4"/></svg>
+  </div>
+
+  <div class="card-stack">
+    {% for bean in g.beans %}
+    {% set rw = bean.remaining_weight|default(0) %}
+    {% set tw = bean.total_weight|default(0) %}
+    {% set rc = bean.remaining_cups|default(0) %}
+    {% set pct = (rw / tw * 100)|int if tw > 0 else 0 %}
+    <div class="stack-card bean-card"
+      style="--idx:{{ loop.index0 }}; --rev:{{ loop.revindex }};{% if bean.unit_price > 1.3 %}background:var(--tier-luxury-soft);border-color:var(--tier-luxury);{% elif bean.unit_price >= 0.6 %}background:var(--tier-premium-soft);border-color:var(--tier-premium);{% elif bean.unit_price > 0 %}background:var(--tier-daily-soft);border-color:var(--tier-daily);{% endif %}"
+      data-brand="{{ bean.roaster|default('') }}"
+      data-origin="{{ bean.origin|default('') }}"
+      data-process="{{ bean.process|default('') }}"
+      data-tier="{% if bean.unit_price > 1.3 %}顶奢{% elif bean.unit_price >= 0.6 %}超精{% elif bean.unit_price > 0 %}口粮{% endif %}"
+      data-text="{{ bean.origin|default('') }} {{ bean.farm|default('') }} {{ bean.variety|default('') }} {{ bean.process|default('') }}">
+
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <a href="/bean/{{ bean.id }}" style="flex:1;min-width:0;text-decoration:none" onclick="event.stopPropagation()">
+          <div style="display:flex;align-items:center;gap:5px;min-width:0">
+            <div style="font-weight:{% if bean.unit_price >= 0.6 %}800{% else %}700{% endif %};font-size:22px;color:{% if bean.unit_price > 1.3 %}var(--tier-luxury-text){% elif bean.unit_price >= 0.6 %}var(--tier-premium-text){% elif bean.unit_price > 0 %}var(--tier-daily-text){% else %}var(--text){% endif %};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              {%- if bean.origin and bean.farm -%}{{ bean.origin }} · {{ bean.farm }}
+              {%- elif bean.farm -%}{{ bean.farm }}
+              {%- else -%}{{ bean.origin }}{%- endif -%}
+            </div>
+            {% if bean.unit_price > 1.3 %}<span class="tier-badge tier-luxury">顶奢</span>
+            {% elif bean.unit_price >= 0.6 %}<span class="tier-badge tier-premium">超精</span>
+            {% elif bean.unit_price > 0 %}<span class="tier-badge tier-daily">口粮</span>{% endif %}
+          </div>
+          <div style="color:var(--text2);font-size:18px;margin-top:4px">
+            {{ bean.variety }}{% if bean.variety and bean.process %} · {% endif %}{{ bean.process }}
+          </div>
+        </a>
+        <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+          <span class="badge badge-cups">{{ rc }} 杯</span>
+          <a href="/bean/{{ bean.id }}/edit" class="btn btn-ghost" style="padding:7px 16px;font-size:18px" onclick="event.stopPropagation()">编辑</a>
+        </div>
+      </div>
+
+      <div class="stack-card-detail">
+        <div class="inv-bar-wrap" style="margin-top:6px">
+          <div class="inv-bar {% if bean.unit_price > 1.3 %}tier-luxury{% elif bean.unit_price >= 0.6 %}tier-premium{% elif bean.unit_price > 0 %}tier-daily{% endif %}" style="width:{{ [pct,100]|min }}%"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px">
+          <div style="font-size:18px;color:var(--text2)">{{ bean.flavor_desc|truncate(40,true,'…') }}</div>
+          <div style="font-size:18px;color:var(--text2);flex-shrink:0;margin-left:6px">{{ rw }}g</div>
+        </div>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+<style>
+.folder-tab {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-bottom: none; border-radius: 8px 8px 0 0;
+  cursor: pointer; user-select: none; transition: background .2s;
+}
+.folder-tab:hover { background: rgba(239, 111, 26, .12); }
+.folder-brand {
+  background: var(--accent); color: #fff;
+  border-radius: 4px; padding: 4px 12px;
+  font-size: 18px; font-weight: 700;
+}
+.folder-arrow { margin-left: 4px; transition: transform .3s; color: var(--text2); flex-shrink: 0; }
+.folder-group.open .folder-arrow { transform: rotate(180deg); }
+
+.card-stack { perspective: 900px; position: relative; padding-bottom: 8px; }
+
+.stack-card {
+  position: relative; z-index: var(--rev);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 0 0 8px 8px; padding: 11px 14px 8px;
+  cursor: default; margin-top: -1px; transform-origin: top center;
+  transition: transform .35s cubic-bezier(.25,.46,.45,.94),
+              margin-top .35s cubic-bezier(.25,.46,.45,.94),
+              box-shadow .35s, opacity .35s;
+  transform: translateY(calc(var(--idx) * 4px)) scaleX(calc(1 - var(--idx) * 0.018));
+  box-shadow: 0 calc(var(--idx) * 2px) 0 rgba(54, 43, 30, .16);
+}
+.card-stack:not(.expanded) .stack-card { opacity: 0; pointer-events: none; height: 0; overflow: hidden; padding: 0; border-width: 0; }
+.card-stack:not(.expanded) .stack-card:nth-child(1),
+.card-stack:not(.expanded) .stack-card:nth-child(2) {
+  opacity: 1; pointer-events: auto; height: auto; overflow: visible; padding: 11px 14px 8px; border-width: 1px;
+}
+.card-stack.expanded .stack-card {
+  opacity: 1; pointer-events: auto; height: auto; overflow: visible;
+  padding: 11px 14px 8px; border-width: 1px; margin-top: 6px;
+  transform: none; box-shadow: 0 6px 14px rgba(54, 43, 30, .14);
+  transition-delay: calc(var(--idx) * 0.04s);
+}
+.card-stack.expanded .stack-card:first-child { margin-top: 0; border-radius: 0 0 8px 8px; }
+.card-stack.expanded .stack-card:not(:first-child) { border-radius: 8px; }
+.card-stack.expanded .stack-card:hover { border-color: var(--accent); }
+.stack-card-detail { display: none; }
+.card-stack.expanded .stack-card-detail { display: block; }
+
+.filter-chip {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text2); border-radius: 12px; padding: 6px 16px;
+  font-size: 18px; cursor: pointer; transition: all .15s;
+}
+.filter-chip:hover { border-color: var(--accent); color: var(--accent2); }
+.filter-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+</style>
+
+<script>
+document.querySelectorAll('.folder-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const group = tab.closest('.folder-group');
+    const stack = group.querySelector('.card-stack');
+    const isOpen = group.classList.toggle('open');
+    stack.classList.toggle('expanded', isOpen);
+  });
+});
+
+const filters = { category: '', origin: '', process: '', tier: '', text: '' };
+
+function toggleFilter() {
+  const p = document.getElementById('filter-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', e => {
+  const btn = document.getElementById('filter-btn');
+  const panel = document.getElementById('filter-panel');
+  if (btn && !btn.contains(e.target) && !panel.contains(e.target))
+    panel.style.display = 'none';
+});
+
+function setFilter(type, val, el) {
+  filters[type] = val;
+  document.querySelectorAll(`.filter-chip[data-type="${type}"]`).forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  applyFilters();
+}
+
+function applyFilters() {
+  filters.text = (document.getElementById('bean-search').value || '').toLowerCase();
+  let shown = 0, total = 0;
+  document.querySelectorAll('.folder-group').forEach(group => {
+    const categoryOk = !filters.category || group.dataset.category === filters.category;
+    let groupVisible = false;
+    group.querySelectorAll('.bean-card').forEach(card => {
+      total++;
+      const originOk  = !filters.origin  || card.dataset.origin  === filters.origin;
+      const processOk = !filters.process || card.dataset.process === filters.process;
+      const tierOk    = !filters.tier    || card.dataset.tier    === filters.tier;
+      const textOk    = !filters.text    || card.dataset.text.toLowerCase().includes(filters.text);
+      const vis = categoryOk && originOk && processOk && tierOk && textOk;
+      card.style.display = vis ? '' : 'none';
+      if (vis) { shown++; groupVisible = true; }
+    });
+    group.style.display = groupVisible ? '' : 'none';
+  });
+  const tip = document.getElementById('bean-count-tip');
+  const active = filters.category || filters.origin || filters.process || filters.tier || filters.text;
+  tip.style.display = active ? 'block' : 'none';
+  if (active) tip.textContent = `显示 ${shown} / ${total} 款`;
+  const countEl = document.getElementById('filter-count');
+  const n = [filters.category, filters.origin, filters.process, filters.tier, filters.text].filter(Boolean).length;
+  countEl.style.display = n ? 'inline' : 'none';
+  if (n) countEl.textContent = n;
+}
+
+function resetFilters() {
+  filters.category = ''; filters.origin = ''; filters.process = ''; filters.tier = ''; filters.text = '';
+  document.getElementById('bean-search').value = '';
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', c.dataset.val === ''));
+  applyFilters();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}全部冲煮{% endblock %}
+{% block content %}
+
+<div style="max-width:860px;margin:0 auto">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px">
+    <div style="display:flex;align-items:center;gap:12px;min-width:0">
+      <a href="/" class="btn btn-ghost btn-page-action">← 返回</a>
+      <div class="page-title" style="margin:0">全部冲煮</div>
+    </div>
+    <a href="/record/new" class="btn btn-primary" style="padding:8px 20px;font-size:20px">+ 新增记录</a>
+  </div>
+
+  {% if not records %}
+  <div class="card" style="color:var(--text2);text-align:center;padding:32px">暂无记录，<a href="/record/new">新建第一条</a></div>
+  {% else %}
+  <div style="display:flex;flex-direction:column;gap:10px">
+    {% set record_return_to = url_for('record_list') %}
+    {% for r in records %}
+      {% set card_index = loop.index0 %}
+      {% include "_record_card.html" %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

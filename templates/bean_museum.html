@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}咖啡豆博物馆{% endblock %}
+{% block content %}
+
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+  <a href="/" class="btn btn-ghost btn-page-action">← 返回首页</a>
+  <div class="page-title" style="margin:0">🏛 咖啡豆博物馆</div>
+  <span style="color:var(--text2);font-size:26px">共 {{ beans|length }} 款已品完的豆子</span>
+</div>
+
+{% if not beans %}
+<div class="card" style="text-align:center;padding:48px;color:var(--text2)">
+  还没有喝完的豆子，继续冲吧 ☕
+</div>
+{% else %}
+<div style="display:flex;flex-direction:column;gap:16px">
+{% for bean in beans %}
+{% set tc = bean.total_cups|default(0) %}
+{% set tw = bean.total_weight|default(0) %}
+<a href="/bean/{{ bean.id }}" style="text-decoration:none">
+<div class="card" style="transition:border-color .2s;opacity:.85"
+  onmouseover="this.style.borderColor='var(--accent)';this.style.opacity='1'"
+  onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.85'">
+
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700;font-size:22px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+        {{ bean.origin }}{% if bean.farm %} · {{ bean.farm }}{% endif %}
+      </div>
+      <div style="color:var(--text2);font-size:18px;margin-top:4px">
+        {{ bean.roaster }}{% if bean.variety %} · {{ bean.variety }}{% endif %}
+      </div>
+    </div>
+    <span class="badge" style="flex-shrink:0;margin-left:8px">已品完</span>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
+    {% if bean.process %}<span class="badge">{{ bean.process }}</span>{% endif %}
+    {% if bean.roast_level %}<span class="badge">{{ bean.roast_level }}烘</span>{% endif %}
+    {% if tc %}<span class="badge badge-amber">共 {{ tc }} 杯</span>{% endif %}
+    {% if tw %}<span class="badge">{{ tw }}g</span>{% endif %}
+  </div>
+
+  {% if bean.flavor_desc %}
+  <div class="flavor-tags">
+    {% for tag in bean.flavor_desc.split('、') %}
+    <span class="flavor-tag">{{ tag }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if bean.roast_date %}
+  <div style="margin-top:10px;font-size:18px;color:var(--text2)">批次：{{ bean.roast_date }}</div>
+  {% endif %}
+
+</div>
+</a>
+{% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

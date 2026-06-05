@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+{% set b = bean or {} %}
+<div style="max-width:720px;margin:0 auto">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+    <a href="/" class="btn btn-ghost btn-page-action">← 返回</a>
+    <div class="page-title" style="margin:0">{{ title }}</div>
+  </div>
+
+  {% if error %}
+  <div style="background:#fff0f0;border:1px solid #fca5a5;border-radius:6px;padding:10px 14px;margin-bottom:14px;color:#e05555;font-size:13px">
+    ⚠ {{ error }}
+  </div>
+  {% endif %}
+
+  <form id="bean-form" method="POST">
+    <div class="card">
+      <div class="form-grid">
+
+        <!-- 基本信息 -->
+        <div class="section-label">基本信息</div>
+        <div class="form-group full">
+          <label>豆子名称 *</label>
+          <input type="text" name="name" value="{{ b.get('name','') }}" placeholder="如：普蓝 哈特曼庄园" required>
+        </div>
+        <div class="form-group">
+          <label>品牌 / 烘焙商</label>
+          <input type="text" name="roaster" value="{{ b.get('roaster','') }}" placeholder="如：普蓝">
+        </div>
+        <div class="form-group">
+          <label>烘焙度</label>
+          <select name="roast_level">
+            <option value="">— 请选择 —</option>
+            {% for lv in ['浅', '中浅', '中', '中深', '深'] %}
+            <option value="{{ lv }}" {% if b.get('roast_level') == lv %}selected{% endif %}>{{ lv }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- 产地 -->
+        <hr class="section-divider">
+        <div class="section-label">产地信息</div>
+        <div class="form-group">
+          <label>产地（国家/产区）</label>
+          <input type="text" name="origin" value="{{ b.get('origin','') }}" placeholder="如：巴拿马">
+        </div>
+        <div class="form-group">
+          <label>庄园 / 处理厂</label>
+          <input type="text" name="farm" value="{{ b.get('farm','') }}" placeholder="如：哈特曼庄园">
+        </div>
+        <div class="form-group">
+          <label>品种</label>
+          <input type="text" name="variety" value="{{ b.get('variety','') }}" placeholder="如：瑰夏、铁皮卡">
+        </div>
+        <div class="form-group">
+          <label>处理法</label>
+          <input type="text" name="process" value="{{ b.get('process','') }}" placeholder="如：水洗、日晒、蜜处理">
+        </div>
+
+        <!-- 批次 -->
+        <hr class="section-divider">
+        <div class="section-label">批次</div>
+        <div class="form-group">
+          <label>批次</label>
+          <input type="text" name="roast_date" value="{{ b.get('roast_date','') }}" placeholder="如：2026-04-10 或 4/10 批">
+        </div>
+        <div class="form-group">
+          <label>赏味期限</label>
+          <input type="text" name="best_before" value="{{ b.get('best_before','') }}" placeholder="如：2026-07-20">
+        </div>
+
+        <!-- 库存 -->
+        <hr class="section-divider">
+        <div class="section-label">库存 &amp; 价格</div>
+        <div class="form-group">
+          <label>包装类型</label>
+          <select name="packaging">
+            <option value="">— 请选择 —</option>
+            {% for pk in ['花袋', '花罐', '小包', '豆袋', '豆罐'] %}
+            <option value="{{ pk }}" {% if b.get('packaging') == pk %}selected{% endif %}>{{ pk }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>单价（元/g）</label>
+          <input type="number" name="unit_price" value="{{ b.get('unit_price', 0) }}" min="0" step="0.01">
+        </div>
+        <div class="form-group">
+          <label>购入总重量（g）</label>
+          <input type="number" name="total_weight" value="{{ b.get('total_weight', 0) }}" min="0" step="0.1"
+            {% if not bean %}oninput="syncRemaining(this,'remaining_weight')"{% endif %}>
+        </div>
+        <div class="form-group">
+          <label>购入总杯数</label>
+          <input type="number" name="total_cups" value="{{ b.get('total_cups', 0) }}" min="0"
+            {% if not bean %}oninput="syncRemaining(this,'remaining_cups')"{% endif %}>
+        </div>
+        {% if bean %}
+        <div class="form-group">
+          <label>当前剩余重量（g）</label>
+          <input type="number" name="remaining_weight" value="{{ b.get('remaining_weight', 0) }}" min="0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>当前剩余杯数</label>
+          <input type="number" name="remaining_cups" value="{{ b.get('remaining_cups', 0) }}" min="0">
+        </div>
+        {% else %}
+        <input type="hidden" name="remaining_weight" id="remaining_weight" value="{{ b.get('total_weight', 0) }}">
+        <input type="hidden" name="remaining_cups" id="remaining_cups" value="{{ b.get('total_cups', 0) }}">
+        {% endif %}
+
+        <!-- 风味 -->
+        <hr class="section-divider">
+        <div class="section-label">风味描述</div>
+        <div class="form-group full">
+          <label>参考风味（用 、 分隔）</label>
+          <input type="text" name="flavor_desc" value="{{ b.get('flavor_desc','') }}" placeholder="如：草莓、柑橘、蜂蜜">
+        </div>
+        <div class="form-group full">
+          <label>备注</label>
+          <textarea name="notes" rows="2">{{ b.get('notes','') }}</textarea>
+        </div>
+
+        <!-- 提交 -->
+        <hr class="section-divider">
+        <div class="form-group full" style="flex-direction:row;gap:10px;justify-content:flex-end">
+          <a href="/" class="btn btn-ghost">取消</a>
+          <button type="submit" class="btn btn-primary">💾 保存豆子</button>
+        </div>
+
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+function syncRemaining(src, targetId) {
+  document.getElementById(targetId).value = src.value;
+}
+</script>
+{% endblock %}

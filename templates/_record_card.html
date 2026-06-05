@@ -1,0 +1,37 @@
+{% set score = r.get('overall_score', 0)|float %}
+{% set water_temp = r.get('water_temp') %}
+{% set coffee_amount = r.get('coffee_amount') %}
+{% set grind_setting = r.get('grind_setting') %}
+{% set total_time = r.get('total_time') %}
+{% set flavor_note = r.get('flavor') %}
+{% set water_adjustment = r.get('water_temp_adjustment') %}
+{% set grind_adjustment = r.get('grind_adjustment') %}
+{% set tasting_notes = r.get('tasting_notes') %}
+{% set note = namespace(parts=[]) %}
+{% if flavor_note %}{% set note.parts = note.parts + ['风味：' ~ flavor_note] %}{% endif %}
+{% if water_adjustment %}{% set note.parts = note.parts + ['水温：' ~ water_adjustment] %}{% endif %}
+{% if grind_adjustment %}{% set note.parts = note.parts + ['研磨：' ~ grind_adjustment] %}{% endif %}
+{% if tasting_notes %}{% set note.parts = note.parts + [tasting_notes] %}{% endif %}
+<div class="card brew-card" style="animation: cardIn 0.4s ease both; animation-delay: {{ (card_index|default(0)) * 0.06 }}s">
+  <div class="brew-card-top">
+    <a href="/record/{{ r.id }}" class="brew-title-link">
+      <div class="brew-bean-name" data-fit-title title="{{ r.get('_bean_name', '未知') }}">{{ r.get('_bean_name', '未知') }}</div>
+      <div class="brew-date">{{ r.date }}</div>
+    </a>
+    <div class="brew-actions">
+      <div class="brew-score">{{ "%.1f"|format(score) }}</div>
+      <a href="/record/{{ r.id }}/edit" class="btn btn-ghost brew-action-btn">编辑</a>
+      <form method="POST" action="/record/{{ r.id }}/delete" style="display:inline" onsubmit="return confirm('确认删除这条冲煮记录？库存将自动恢复。')">
+        {% if record_return_to is defined %}<input type="hidden" name="next" value="{{ record_return_to }}">{% endif %}
+        <button type="submit" class="btn brew-action-btn brew-delete-btn">删除</button>
+      </form>
+    </div>
+  </div>
+  <div class="brew-meta">
+    {% if water_temp is not none and water_temp != '' %}<span class="badge">{{ "%.1f"|format(water_temp|float) }}℃</span>{% endif %}
+    {% if coffee_amount is not none and coffee_amount != '' %}<span class="badge">{{ "%.1f"|format(coffee_amount|float) }}g</span>{% endif %}
+    {% if grind_setting %}<span class="badge">刻度 {{ grind_setting }}</span>{% endif %}
+    {% if total_time is not none and total_time != '' %}<span class="badge">{{ total_time|int }}s</span>{% endif %}
+  </div>
+  <div class="brew-note" title="{{ note.parts|join(' ｜ ') }}">{{ note.parts|join(' ｜ ') if note.parts else '—' }}</div>
+</div>

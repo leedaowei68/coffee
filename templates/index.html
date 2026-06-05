@@ -1,0 +1,707 @@
+﻿{% extends "base.html" %}
+{% block title %}☕ 手冲看板{% endblock %}
+{% block content %}
+{% macro bean_brief(bean) -%}
+  {%- if bean.origin and bean.farm -%}{{ bean.origin }} · {{ bean.farm }}
+  {%- elif bean.farm -%}{{ bean.farm }}
+  {%- elif bean.origin -%}{{ bean.origin }}
+  {%- else -%}{{ bean.name }}
+  {%- endif -%}
+{%- endmacro %}
+
+<!-- 统计概览 -->
+{% set total_beans = beans|length %}
+{% set active_beans = beans|selectattr("remaining_cups", "gt", 0)|list|length %}
+{% set total_records = record_count|default(records|length) %}
+{% set total_cups = beans|sum(attribute="remaining_cups") %}
+{% set total_weight_g = beans|sum(attribute="remaining_weight") %}
+<div class="dashboard-stat-grid">
+  <div class="card dashboard-stat-card" id="bean-total-card" onclick="toggleBeanMenu()">
+    <div style="font-size:48px;font-weight:700;color:var(--accent2)">{{ total_beans }}</div>
+    <div style="color:var(--text2);font-size:20px;margin-top:2px">豆子总数 <span id="bean-menu-arrow" style="font-size:18px;transition:transform .25s;display:inline-block">▾</span></div>
+    <div id="bean-menu">
+      <!-- 库存豆子行，悬浮显示统计浮层 -->
+      <div style="position:relative" id="inventory-row"
+        onmouseenter="document.getElementById('inventory-tooltip').style.display='flex'"
+        onmouseleave="document.getElementById('inventory-tooltip').style.display='none'">
+        <a href="/beans" onclick="event.stopPropagation()" class="bean-menu-link with-border">
+          <span>☕ 库存豆子</span>
+          <span class="badge badge-green">{{ active_beans }}</span>
+        </a>
+        <!-- 悬浮统计卡片，显示在右侧 -->
+        <div id="inventory-tooltip" style="display:none;position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);background:var(--surface-solid);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.6);padding:14px 20px;gap:24px;white-space:nowrap;pointer-events:none;z-index:400">
+          <div style="text-align:center">
+            <div style="font-size:36px;font-weight:700;color:var(--accent2)">{{ total_cups }}</div>
+            <div style="font-size:18px;color:var(--text2);margin-top:2px">剩余总杯数</div>
+          </div>
+          <div style="width:1px;background:var(--border)"></div>
+          <div style="text-align:center">
+            <div style="font-size:36px;font-weight:700;color:var(--accent2)">{{ "%.2f"|format(total_weight_g / 1000) }}<span style="font-size:20px;font-weight:400;color:var(--text2);margin-left:2px">kg</span></div>
+            <div style="font-size:18px;color:var(--text2);margin-top:2px">剩余豆子重量</div>
+          </div>
+        </div>
+      </div>
+      <a href="/beans/museum" onclick="event.stopPropagation()" class="bean-menu-link">
+        <span>🏛 咖啡豆博物馆</span>
+        <span class="badge">{{ museum_count }}</span>
+      </a>
+    </div>
+  </div>
+  <div class="card dashboard-stat-card dashboard-hover-card">
+    <div class="dashboard-stat-value">{{ soon_best_stat }}</div>
+    <div class="dashboard-stat-label">赏味期最近</div>
+    <div class="stat-dropdown">
+      <div class="stat-dropdown-title">最近 5 只豆子</div>
+      {% if soon_best_beans %}
+      {% for bean in soon_best_beans %}
+      <a href="/bean/{{ bean.id }}" class="stat-bean-row">
+        <span class="stat-bean-copy">
+          <span class="stat-bean-name">{{ bean_brief(bean) }}</span>
+          <span class="stat-bean-sub">{{ bean.best_before }} · {{ bean['_best_before_label'] }}</span>
+        </span>
+        <span class="badge badge-cups">{{ bean.remaining_cups|default(0) }} 杯</span>
+      </a>
+      {% endfor %}
+      {% else %}
+      <div class="stat-empty-row">暂无可显示的库存豆子</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card dashboard-stat-card dashboard-hover-card">
+    <div class="dashboard-stat-value">{{ top_remaining_cups }}</div>
+    <div class="dashboard-stat-label">最多剩余杯数</div>
+    <div class="stat-dropdown">
+      <div class="stat-dropdown-title">剩余最多 5 只豆子</div>
+      {% if most_remaining_beans %}
+      {% for bean in most_remaining_beans %}
+      <a href="/bean/{{ bean.id }}" class="stat-bean-row">
+        <span class="stat-bean-copy">
+          <span class="stat-bean-name">{{ bean_brief(bean) }}</span>
+          <span class="stat-bean-sub">{{ "%.0f"|format(bean.remaining_weight|default(0)) }}g · {{ bean.best_before or "—" }}</span>
+        </span>
+        <span class="badge badge-cups">{{ bean.remaining_cups|default(0) }} 杯</span>
+      </a>
+      {% endfor %}
+      {% else %}
+      <div class="stat-empty-row">暂无可显示的库存豆子</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card dashboard-stat-card dashboard-stat-placeholder" aria-hidden="true"></div>
+  <div class="card dashboard-stat-card dashboard-stat-placeholder" aria-hidden="true"></div>
+</div>
+
+<div class="grid-2 dashboard-main-grid" style="align-items:start">
+
+  <!-- 豆子库存 -->
+  <div class="inventory-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <a href="/beans" style="font-size:26px;font-weight:700;color:var(--accent2);text-decoration:none" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--accent2)'">库存豆子</a>
+        <div style="position:relative">
+          <button id="filter-btn" onclick="toggleFilter()" class="btn btn-ghost" style="padding:8px 18px;font-size:20px;display:flex;align-items:center;gap:5px">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 2h13l-5 6v5l-3-2V8L1.5 2z"/></svg>
+            筛选<span id="filter-count" style="display:none;background:var(--accent);color:#fff;border-radius:8px;padding:0 8px;font-size:16px;margin-left:4px"></span>
+          </button>
+          {% set ns = namespace(origins=[], processes=[]) %}
+          {% for g in bean_groups %}{% for b in g.beans %}
+            {% if b.origin and b.origin not in ns.origins %}{% set ns.origins = ns.origins + [b.origin] %}{% endif %}
+            {% if b.process and b.process not in ns.processes %}{% set ns.processes = ns.processes + [b.process] %}{% endif %}
+          {% endfor %}{% endfor %}
+          <div id="filter-panel">
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px 40px;margin-bottom:20px">
+              <div>
+                <div style="font-size:18px;color:var(--text2);margin-bottom:10px;letter-spacing:.6px">分类</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px">
+                  <button class="filter-chip active" data-type="category" data-val="" onclick="setFilter('category','',this)">全部</button>
+                  {% for g in bean_groups %}<button class="filter-chip" data-type="category" data-val="{{ g.category }}" onclick="setFilter('category','{{ g.category }}',this)">{{ g.category }}</button>{% endfor %}
+                </div>
+              </div>
+              <div>
+                <div style="font-size:18px;color:var(--text2);margin-bottom:10px;letter-spacing:.6px">产地</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px">
+                  <button class="filter-chip active" data-type="origin" data-val="" onclick="setFilter('origin','',this)">全部</button>
+                  {% for o in ns.origins %}<button class="filter-chip" data-type="origin" data-val="{{ o }}" onclick="setFilter('origin','{{ o }}',this)">{{ o }}</button>{% endfor %}
+                </div>
+              </div>
+              <div>
+                <div style="font-size:18px;color:var(--text2);margin-bottom:10px;letter-spacing:.6px">处理法</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px">
+                  <button class="filter-chip active" data-type="process" data-val="" onclick="setFilter('process','',this)">全部</button>
+                  {% for p in ns.processes %}<button class="filter-chip" data-type="process" data-val="{{ p }}" onclick="setFilter('process','{{ p }}',this)">{{ p }}</button>{% endfor %}
+                </div>
+              </div>
+              <div>
+                <div style="font-size:18px;color:var(--text2);margin-bottom:10px;letter-spacing:.6px">等级</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px">
+                  <button class="filter-chip active" data-type="tier" data-val="" onclick="setFilter('tier','',this)">全部</button>
+                  <button class="filter-chip" data-type="tier" data-val="顶奢" onclick="setFilter('tier','顶奢',this)" style="color:var(--tier-luxury-text)">顶奢</button>
+                  <button class="filter-chip" data-type="tier" data-val="超精" onclick="setFilter('tier','超精',this)" style="color:var(--tier-premium-text)">超精</button>
+                  <button class="filter-chip" data-type="tier" data-val="口粮" onclick="setFilter('tier','口粮',this)" style="color:var(--tier-daily-text)">口粮</button>
+                </div>
+              </div>
+            </div>
+            <div style="font-size:18px;color:var(--text2);margin-bottom:8px;letter-spacing:.6px">搜索</div>
+            <input id="bean-search" type="text" placeholder="庄园、品种…" oninput="applyFilters()"
+              style="width:100%;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:20px">
+            <button onclick="resetFilters()" style="margin-top:12px;width:100%;padding:10px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:18px;cursor:pointer">重置筛选</button>
+          </div>
+        </div>
+      </div>
+      <a href="/bean/new" class="btn btn-primary" style="padding:8px 20px;font-size:20px">+ 新增豆子</a>
+    </div>
+    <div id="bean-count-tip" style="font-size:20px;color:var(--text2);margin-bottom:8px;display:none"></div>
+
+    <!-- 3D 文件叠放 -->
+    <div style="display:flex;flex-direction:column;gap:20px">
+    {% for g in bean_groups %}
+    <div class="folder-group" data-category="{{ g.category }}" style="animation: cardIn 0.4s ease both; animation-delay: {{ loop.index0 * 0.07 }}s">
+
+      <!-- 分类文件夹标签 -->
+      <div class="folder-tab">
+        <span class="folder-brand">{{ g.category }}</span>
+        <span style="color:var(--text2);font-size:20px">{{ g.total_count }} 款</span>
+        <span style="color:var(--text2);font-size:20px;margin-left:auto">{{ "%.0f"|format(g.total_weight) }}g</span>
+        <svg class="folder-arrow" width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 4l4 4 4-4"/></svg>
+      </div>
+
+      <!-- 叠放的卡片 -->
+      <div class="card-stack">
+        {% for bean in g.beans %}
+        {% set rw = bean.remaining_weight|default(0) %}
+        {% set tw = bean.total_weight|default(0) %}
+        {% set rc = bean.remaining_cups|default(0) %}
+        {% set pct = (rw / tw * 100)|int if tw > 0 else 0 %}
+        <div class="stack-card bean-card"
+          style="--idx:{{ loop.index0 }}; --rev:{{ loop.revindex }};"
+          data-brand="{{ bean.roaster|default('') }}"
+          data-origin="{{ bean.origin|default('') }}"
+          data-process="{{ bean.process|default('') }}"
+          data-tier="{% if bean.unit_price > 1.3 %}顶奢{% elif bean.unit_price >= 0.6 %}超精{% elif bean.unit_price > 0 %}口粮{% endif %}"
+          data-text="{{ bean.origin|default('') }} {{ bean.farm|default('') }} {{ bean.variety|default('') }} {{ bean.process|default('') }}">
+
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <a href="/bean/{{ bean.id }}" style="flex:1;min-width:0;text-decoration:none" onclick="event.stopPropagation()">
+              <div style="display:flex;align-items:center;gap:5px;min-width:0">
+                <div style="font-weight:{% if bean.unit_price >= 0.6 %}800{% else %}700{% endif %};font-size:22px;color:{% if bean.unit_price > 1.3 %}var(--tier-luxury-text){% elif bean.unit_price >= 0.6 %}var(--tier-premium-text){% elif bean.unit_price > 0 %}var(--tier-daily-text){% else %}var(--text){% endif %};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                  {%- if bean.origin and bean.farm -%}{{ bean.origin }} · {{ bean.farm }}
+                  {%- elif bean.farm -%}{{ bean.farm }}
+                  {%- else -%}{{ bean.origin }}{%- endif -%}
+                </div>
+                {% if bean.unit_price > 1.3 %}<span class="tier-badge tier-luxury">顶奢</span>
+                {% elif bean.unit_price >= 0.6 %}<span class="tier-badge tier-premium">超精</span>
+                {% elif bean.unit_price > 0 %}<span class="tier-badge tier-daily">口粮</span>{% endif %}
+              </div>
+              <div style="color:var(--text2);font-size:18px;margin-top:4px">
+                {{ bean.variety }}{% if bean.variety and bean.process %} · {% endif %}{{ bean.process }}
+              </div>
+            </a>
+            <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+              {% if rc > 0 %}
+              <span class="badge badge-cups">{{ rc }} 杯</span>
+              {% else %}
+              <span class="badge badge-red">尽</span>
+              {% endif %}
+              <a href="/bean/{{ bean.id }}/edit" class="btn btn-ghost" style="padding:7px 16px;font-size:18px" onclick="event.stopPropagation()">编辑</a>
+            </div>
+          </div>
+
+          <!-- 库存进度条（展开后可见） -->
+          <div class="stack-card-detail">
+            <div class="inv-bar-wrap" style="margin-top:6px">
+              <div class="inv-bar {% if bean.unit_price > 1.3 %}tier-luxury{% elif bean.unit_price >= 0.6 %}tier-premium{% elif bean.unit_price > 0 %}tier-daily{% endif %}" style="width:{{ [pct,100]|min }}%"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:4px">
+              <div style="font-size:18px;color:var(--text2)">{{ bean.flavor_desc|truncate(40,true,'…') }}</div>
+              <div style="font-size:18px;color:var(--text2);flex-shrink:0;margin-left:6px">{{ rw }}g</div>
+            </div>
+          </div>
+
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    </div>
+  </div>
+
+  <!-- 最近冲煮记录 -->
+  <div class="recent-brews-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-size:26px;font-weight:700;color:var(--accent2)">最近冲煮</div>
+      <a href="/record/new" class="btn btn-primary" style="padding:8px 20px;font-size:20px">+ 新增记录</a>
+    </div>
+    {% if not records %}
+    <div class="card" style="color:var(--text2);text-align:center;padding:32px">暂无记录，<a href="/record/new">新建第一条</a></div>
+    {% else %}
+    <div class="recent-brews-list" style="display:flex;flex-direction:column;gap:10px">
+    {% for r in records %}
+      {% set card_index = loop.index0 %}
+      {% include "_record_card.html" %}
+    {% endfor %}
+    {% if total_records > records|length %}
+      <a href="/records" class="btn btn-ghost more-records-btn">更多</a>
+    {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<style>
+/* ── 顶部统计框 ─────────────────────────────── */
+.dashboard-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+  position: relative;
+  z-index: 1000;
+  overflow: visible;
+}
+.dashboard-stat-card {
+  min-height: 138px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  position: relative;
+  overflow: visible;
+  user-select: none;
+}
+#bean-total-card {
+  cursor: pointer;
+  z-index: 1100;
+  background: var(--surface-solid);
+}
+.dashboard-stat-value {
+  font-size: 48px;
+  font-weight: 700;
+  color: var(--accent2);
+  line-height: 1.05;
+}
+.dashboard-stat-label {
+  color: var(--text2);
+  font-size: 20px;
+  margin-top: 8px;
+}
+.dashboard-hover-card {
+  background: var(--surface-solid);
+  transition: border-color .18s, box-shadow .18s, transform .18s;
+}
+.dashboard-hover-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 8px;
+  display: none;
+}
+.dashboard-hover-card:hover,
+.dashboard-hover-card:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 18px 36px rgba(54, 43, 30, .20);
+  z-index: 1200;
+}
+.dashboard-hover-card:hover::after,
+.dashboard-hover-card:focus-within::after {
+  display: block;
+}
+.stat-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 360px;
+  z-index: 9998;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 30px rgba(54, 43, 30, .18);
+  overflow: hidden;
+  text-align: left;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
+}
+.dashboard-hover-card:hover .stat-dropdown,
+.dashboard-hover-card:focus-within .stat-dropdown {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition: opacity .18s ease, transform .18s ease, visibility 0s linear 0s;
+}
+.stat-dropdown-title {
+  padding: 12px 16px;
+  color: var(--text2);
+  font-size: 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.stat-bean-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface-solid);
+  color: var(--text);
+  text-decoration: none;
+  border-top: 1px solid rgba(169, 154, 127, .45);
+}
+.stat-dropdown-title + .stat-bean-row {
+  border-top: none;
+}
+.stat-bean-row:hover {
+  background: var(--surface2-solid);
+  color: var(--text);
+}
+.stat-bean-copy {
+  min-width: 0;
+  display: block;
+}
+.stat-bean-name {
+  display: block;
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent2);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.stat-bean-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--text2);
+  font-size: 16px;
+  line-height: 1.2;
+}
+.stat-empty-row {
+  padding: 18px 16px;
+  color: var(--text2);
+  font-size: 18px;
+}
+.dashboard-stat-placeholder {
+  background: rgba(255, 255, 255, .72);
+}
+.dashboard-main-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.dashboard-main-grid > * {
+  min-width: 0;
+}
+.inventory-panel,
+.recent-brews-panel,
+.recent-brews-list,
+.recent-brews-list .brew-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .dashboard-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dashboard-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 540px) {
+  .dashboard-stat-grid {
+    grid-template-columns: 1fr;
+  }
+  .stat-dropdown {
+    width: 100%;
+  }
+  .stat-bean-name {
+    max-width: calc(100vw - 170px);
+  }
+}
+
+/* ── 文件夹标签 ─────────────────────────────── */
+.folder-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  user-select: none;
+  transition: background .2s;
+}
+.folder-tab:hover { background: rgba(239, 111, 26, .12); }
+.folder-brand {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.folder-arrow {
+  margin-left: 4px;
+  transition: transform .3s;
+  color: var(--text2);
+  flex-shrink: 0;
+}
+.folder-group.open .folder-arrow { transform: rotate(180deg); }
+
+/* ── 卡片叠放容器 ────────────────────────────── */
+.card-stack {
+  perspective: 900px;
+  position: relative;
+  padding-bottom: 8px;
+}
+
+/* ── 单张卡片 ──────────────────────────────── */
+.stack-card {
+  position: relative;
+  z-index: var(--rev);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+  padding: 11px 14px 8px;
+  cursor: default;
+  /* 叠放状态：后面的卡片向下偏移露出边缘 */
+  margin-top: -1px;
+  transform-origin: top center;
+  transition: transform .35s cubic-bezier(.25,.46,.45,.94),
+              margin-top .35s cubic-bezier(.25,.46,.45,.94),
+              box-shadow .35s,
+              opacity .35s;
+  transform: translateY(calc(var(--idx) * 4px)) scaleX(calc(1 - var(--idx) * 0.018));
+  box-shadow: 0 calc(var(--idx) * 2px) 0 rgba(54, 43, 30, .16);
+}
+
+/* 折叠时完整显示前2张，其余点击分类后展开 */
+.card-stack:not(.expanded) .stack-card { opacity: 0; pointer-events: none; height: 0; overflow: hidden; padding: 0; border-width: 0; }
+.card-stack:not(.expanded) .stack-card:nth-child(1),
+.card-stack:not(.expanded) .stack-card:nth-child(2) {
+  opacity: 1;
+  pointer-events: auto;
+  height: auto;
+  overflow: visible;
+  padding: 11px 14px 8px;
+  border-width: 1px;
+}
+
+/* 展开状态 */
+.card-stack.expanded .stack-card {
+  opacity: 1;
+  pointer-events: auto;
+  height: auto;
+  overflow: visible;
+  padding: 11px 14px 8px;
+  border-width: 1px;
+  margin-top: 6px;
+  transform: none;
+  box-shadow: 0 6px 14px rgba(54, 43, 30, .14);
+  transition-delay: calc(var(--idx) * 0.04s);
+}
+.card-stack.expanded .stack-card:first-child { margin-top: 0; border-radius: 0 0 8px 8px; }
+.card-stack.expanded .stack-card:not(:first-child) { border-radius: 8px; }
+.card-stack.expanded .stack-card:hover { border-color: var(--accent); }
+
+/* 展开时才显示详情行 */
+.stack-card-detail { display: none; }
+.card-stack.expanded .stack-card-detail { display: block; }
+
+/* ── Bean menu dropdown ─────────────────────── */
+#bean-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 300px;
+  z-index: 9999;
+  background: var(--surface-solid) !important;
+  background-image: none !important;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 30px rgba(54, 43, 30, .18);
+  overflow: visible;
+  text-align: left;
+  isolation: isolate;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: transform 0.22s ease, visibility 0s linear 0.22s;
+}
+.bean-menu-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 16px 20px;
+  background: var(--surface-solid);
+  color: var(--text);
+  font-size: 20px;
+  text-decoration: none;
+  transition: background .15s;
+}
+.bean-menu-link:hover {
+  background: var(--surface2-solid);
+  color: var(--text);
+}
+.bean-menu-link:first-of-type {
+  border-radius: 9px 9px 0 0;
+}
+#bean-menu > .bean-menu-link:last-child {
+  border-radius: 0 0 9px 9px;
+}
+.bean-menu-link.with-border {
+  border-bottom: 1px solid var(--border);
+}
+.bean-menu-link span:first-child {
+  white-space: nowrap;
+}
+#bean-menu.open {
+  visibility: visible;
+  transform: translateY(0);
+  transition: transform 0.22s ease, visibility 0s linear 0s;
+}
+
+/* ── Filter panel ───────────────────────────── */
+#filter-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  width: min(1200px, calc(100vw - 60px));
+  box-shadow: 0 14px 30px rgba(54, 43, 30, .18);
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0.22s;
+  pointer-events: none;
+}
+#filter-panel.open {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0s;
+  pointer-events: auto;
+}
+
+/* ── Card entrance animation ────────────────── */
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── 筛选 chip ───────────────────────────────── */
+.filter-chip {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  border-radius: 12px;
+  padding: 6px 16px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.filter-chip:hover { border-color: var(--accent); color: var(--accent2); }
+.filter-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+</style>
+
+<script>
+/* ── 豆子总数下拉菜单 ─────────────────────── */
+function toggleBeanMenu() {
+  const menu = document.getElementById('bean-menu');
+  const arrow = document.getElementById('bean-menu-arrow');
+  const open = !menu.classList.contains('open');
+  menu.classList.toggle('open', open);
+  arrow.style.transform = open ? 'rotate(180deg)' : '';
+}
+document.addEventListener('click', e => {
+  const card = document.getElementById('bean-total-card');
+  if (card && !card.contains(e.target)) {
+    document.getElementById('bean-menu').classList.remove('open');
+    document.getElementById('bean-menu-arrow').style.transform = '';
+  }
+});
+
+/* ── 折叠 / 展开 ─────────────────────────── */
+document.querySelectorAll('.folder-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const group = tab.closest('.folder-group');
+    const stack = group.querySelector('.card-stack');
+    const isOpen = group.classList.toggle('open');
+    stack.classList.toggle('expanded', isOpen);
+  });
+});
+
+/* ── 筛选逻辑 ─────────────────────────────── */
+const filters = { category: '', origin: '', process: '', tier: '', text: '' };
+
+function toggleFilter() {
+  document.getElementById('filter-panel').classList.toggle('open');
+}
+
+document.addEventListener('click', e => {
+  const btn = document.getElementById('filter-btn');
+  const panel = document.getElementById('filter-panel');
+  if (btn && !btn.contains(e.target) && panel && !panel.contains(e.target))
+    panel.classList.remove('open');
+});
+
+function setFilter(type, val, el) {
+  filters[type] = val;
+  document.querySelectorAll(`.filter-chip[data-type="${type}"]`).forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  applyFilters();
+}
+
+function applyFilters() {
+  filters.text = (document.getElementById('bean-search').value || '').toLowerCase();
+  let shown = 0, total = 0;
+
+  document.querySelectorAll('.folder-group').forEach(group => {
+    const categoryOk = !filters.category || group.dataset.category === filters.category;
+    let groupVisible = false;
+
+    group.querySelectorAll('.bean-card').forEach(card => {
+      total++;
+      const originOk  = !filters.origin  || card.dataset.origin  === filters.origin;
+      const processOk = !filters.process || card.dataset.process === filters.process;
+      const tierOk    = !filters.tier    || card.dataset.tier    === filters.tier;
+      const textOk    = !filters.text    || card.dataset.text.toLowerCase().includes(filters.text);
+      const vis = categoryOk && originOk && processOk && tierOk && textOk;
+      card.style.display = vis ? '' : 'none';
+      if (vis) { shown++; groupVisible = true; }
+    });
+
+    group.style.display = groupVisible ? '' : 'none';
+  });
+
+  const tip = document.getElementById('bean-count-tip');
+  const active = filters.category || filters.origin || filters.process || filters.tier || filters.text;
+  tip.style.display = active ? 'block' : 'none';
+  if (active) tip.textContent = `显示 ${shown} / ${total} 款`;
+
+  const countEl = document.getElementById('filter-count');
+  const n = [filters.category, filters.origin, filters.process, filters.tier, filters.text].filter(Boolean).length;
+  countEl.style.display = n ? 'inline' : 'none';
+  if (n) countEl.textContent = n;
+}
+
+function resetFilters() {
+  filters.category = ''; filters.origin = ''; filters.process = ''; filters.tier = ''; filters.text = '';
+  document.getElementById('bean-search').value = '';
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', c.dataset.val === ''));
+  applyFilters();
+}
+</script>
+{% endblock %}

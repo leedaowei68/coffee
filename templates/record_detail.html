@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block title %}冲煮记录详情{% endblock %}
+{% block content %}
+{% set score = record.overall_score|default(0)|float %}
+{% set ratio = "1:%.1f"|format(record.water_amount / record.coffee_amount) if record.coffee_amount else "无数据" %}
+
+<div style="max-width:760px;margin:0 auto">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+    <a href="/" class="btn btn-ghost btn-page-action">← 返回</a>
+    <div class="page-title" style="margin:0">冲煮记录</div>
+    <span style="color:var(--text2);font-size:13px">{{ record.date }}</span>
+  </div>
+
+  <div class="grid-2">
+    <!-- 左列：参数 -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <div class="card">
+        <div class="card-title">咖啡豆</div>
+        <a href="/bean/{{ bean.id }}" style="font-size:16px;font-weight:700;color:var(--accent2)">{{ bean.name }}</a>
+        <div style="color:var(--text2);font-size:12px;margin-top:4px">{{ bean.variety }} · {{ bean.process }}</div>
+        {% if bean.flavor_desc %}
+        <div class="flavor-tags" style="margin-top:8px">
+          {% for tag in bean.flavor_desc.split('、') %}
+          <span class="flavor-tag">{{ tag }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <div class="card-title">冲煮参数</div>
+        <div class="detail-row"><span class="detail-label">研磨刻度</span><span class="detail-val">{{ record.grinder or '—' }} @ {{ record.grind_setting or '—' }}</span></div>
+        <div class="detail-row"><span class="detail-label">水温</span><span class="detail-val">{{ record.water_temp }}℃</span></div>
+        <div class="detail-row"><span class="detail-label">粉量 / 水量</span><span class="detail-val">{{ record.coffee_amount }}g / {{ record.water_amount }}ml（{{ ratio }}）</span></div>
+        <div class="detail-row"><span class="detail-label">滤杯</span><span class="detail-val">{{ record.dripper or '—' }}</span></div>
+        <div class="detail-row"><span class="detail-label">焖蒸</span><span class="detail-val">{{ record.bloom_time }}s</span></div>
+        <div class="detail-row" style="border:none"><span class="detail-label">总时长</span><span class="detail-val">{{ record.total_time }}s</span></div>
+        {% if record.pour_method %}
+        <div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-radius:6px;font-size:12px;color:var(--text2)">
+          注水：{{ record.pour_method }}
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+
+    <!-- 右列：品饮 -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <div class="card">
+        <div class="card-title">品饮感受</div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">
+          <span style="font-size:34px;font-weight:800;color:var(--accent2);line-height:1">{{ score|round(1) }}</span>
+          <span style="color:var(--text2);font-size:12px">/ 10</span>
+          <span style="color:var(--text2);font-size:12px">总体喜好</span>
+        </div>
+        {% set rating_items = [
+          ('香气', 'aroma_score', record.get('aroma_score')),
+          ('酸感', 'acidity_score', record.get('acidity_score')),
+          ('甜感', 'sweetness_score', record.get('sweetness_score')),
+          ('苦感', 'bitterness_score', record.get('bitterness_score')),
+          ('醇厚', 'body_score', record.get('body_score')),
+          ('尾韵', 'finish_score', record.get('finish_score'))
+        ] %}
+        <div class="detail-radar-card">
+          <svg id="detail-radar" class="detail-radar" viewBox="0 0 320 320" aria-label="品饮六边形评分">
+            <g id="detail-radar-grid"></g>
+            <polygon id="detail-radar-polygon" class="detail-radar-polygon" points=""></polygon>
+            <g id="detail-radar-points"></g>
+            <g id="detail-radar-labels"></g>
+          </svg>
+          <div class="detail-score-list">
+            {% for label, name, value in rating_items %}
+            {% set v = value|float if value is not none and value != '' else 0 %}
+            <div class="detail-score-row" data-score-name="{{ name }}" data-score-value="{{ v }}">
+              <span>{{ label }}</span>
+              <strong>{{ v|round(1) }} / 10</strong>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% set note_items = [
+          ('风味描述', record.get('flavor')),
+          ('水温调整', record.get('water_temp_adjustment')),
+          ('研磨度调整', record.get('grind_adjustment')),
+          ('意见', record.get('tasting_notes'))
+        ] %}
+        <div style="display:flex;flex-direction:column;gap:10px">
+          {% for label, value in note_items %}
+          {% if value %}
+          <div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:4px">{{ label }}</div>
+            <div style="padding:14px;background:var(--bg);border-radius:8px;font-size:15px;line-height:1.85;color:var(--text)">
+              {{ value }}
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<style>
+.detail-radar-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 150px;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.detail-radar {
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: visible;
+}
+.detail-radar-grid-line,
+.detail-radar-axis {
+  fill: none;
+  stroke: var(--border);
+}
+.detail-radar-grid-line { stroke-width: 1; }
+.detail-radar-axis { stroke-width: 1; opacity: .75; }
+.detail-radar-polygon {
+  fill: rgba(26, 156, 201, .24);
+  stroke: var(--accent2);
+  stroke-width: 3;
+}
+.detail-radar-point {
+  fill: var(--surface);
+  stroke: var(--accent2);
+  stroke-width: 3;
+}
+.detail-radar-label {
+  fill: var(--text2);
+  font-size: 15px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+.detail-score-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.detail-score-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text2);
+  font-size: 12px;
+}
+.detail-score-row strong {
+  color: var(--accent2);
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .detail-radar-card {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+
+<script>
+(function drawDetailRadar() {
+  const svg = document.getElementById('detail-radar');
+  if (!svg) return;
+
+  const rows = Array.from(document.querySelectorAll('.detail-score-row'));
+  const axisDefs = [
+    { key: 'aroma_score', angle: -90 },
+    { key: 'acidity_score', angle: -30 },
+    { key: 'sweetness_score', angle: 30 },
+    { key: 'bitterness_score', angle: 90 },
+    { key: 'body_score', angle: 150 },
+    { key: 'finish_score', angle: 210 },
+  ];
+  const rowMap = Object.fromEntries(rows.map(row => [row.dataset.scoreName, row]));
+  const axes = axisDefs.map(axis => {
+    const rad = axis.angle * Math.PI / 180;
+    const row = rowMap[axis.key];
+    return {
+      ...axis,
+      label: row?.querySelector('span')?.textContent || '',
+      value: Math.max(0, Math.min(10, parseFloat(row?.dataset.scoreValue || 0))),
+      ux: Math.cos(rad),
+      uy: Math.sin(rad),
+    };
+  });
+  const center = { x: 160, y: 160 };
+  const radius = 104;
+  const ns = 'http://www.w3.org/2000/svg';
+  const grid = document.getElementById('detail-radar-grid');
+  const polygon = document.getElementById('detail-radar-polygon');
+  const points = document.getElementById('detail-radar-points');
+  const labels = document.getElementById('detail-radar-labels');
+
+  function point(axis, value) {
+    const r = radius * (value / 10);
+    return { x: center.x + axis.ux * r, y: center.y + axis.uy * r };
+  }
+  function pointsFor(valueFn) {
+    return axes.map(axis => {
+      const p = point(axis, valueFn(axis));
+      return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+    }).join(' ');
+  }
+
+  [2, 4, 6, 8, 10].forEach(level => {
+    const line = document.createElementNS(ns, 'polygon');
+    line.setAttribute('points', pointsFor(() => level));
+    line.setAttribute('class', 'detail-radar-grid-line');
+    grid.appendChild(line);
+  });
+  axes.forEach(axis => {
+    const end = point(axis, 10);
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', center.x);
+    line.setAttribute('y1', center.y);
+    line.setAttribute('x2', end.x);
+    line.setAttribute('y2', end.y);
+    line.setAttribute('class', 'detail-radar-axis');
+    grid.appendChild(line);
+
+    const labelPoint = { x: center.x + axis.ux * 134, y: center.y + axis.uy * 134 };
+    const text = document.createElementNS(ns, 'text');
+    text.textContent = axis.label;
+    text.setAttribute('x', labelPoint.x);
+    text.setAttribute('y', labelPoint.y);
+    text.setAttribute('class', 'detail-radar-label');
+    labels.appendChild(text);
+
+    const p = point(axis, axis.value);
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', p.x);
+    dot.setAttribute('cy', p.y);
+    dot.setAttribute('r', 6);
+    dot.setAttribute('class', 'detail-radar-point');
+    points.appendChild(dot);
+  });
+  polygon.setAttribute('points', pointsFor(axis => axis.value));
+})();
+</script>
+{% endblock %}
