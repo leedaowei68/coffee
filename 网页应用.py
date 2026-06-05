@@ -192,7 +192,8 @@ def index():
     stock_beans = [b for b in beans if b.get("remaining_cups", 0) > 0]
     today = date.today()
     dated_stock_beans = []
-    for b in stock_beans:
+    best_before_stock_beans = [b for b in stock_beans if b.get("remaining_cups", 0) > 1]
+    for b in best_before_stock_beans:
         best_before = _parse_date(b.get("best_before"))
         if not best_before:
             continue
